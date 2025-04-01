@@ -1,0 +1,260 @@
+use std::collections::{BinaryHeap, HashMap};
+use std::fs::read_to_string;
+use std::os::unix::raw::mode_t;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Node {
+    pub score: u32,
+    pub decay_rate: u32,
+    pub recovery_rate: u32,
+}
+
+impl Node {
+    pub fn new() -> Self {
+        Node {
+            score: 0,
+            decay_rate: 0,
+            recovery_rate: 0
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PathfindingState {
+    pub score: u32,
+    pub timesteps_remaining: u32,
+    pub node: (usize, usize)
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct PathfindingStep {
+    pub node: (usize, usize),
+    pub score: u32
+}
+
+pub struct PathfindingResult {
+    pub score: u32,
+    pub path: Vec<PathfindingStep>
+}
+
+impl PathfindingResult {
+    pub fn empty() -> PathfindingResult {
+        PathfindingResult { score: 0, path: Vec::new() }
+    }
+
+    pub fn occurs_at(&self, node: (usize, usize)) -> Option<usize> {
+        self.path.iter().position(|&n| n.node == node)
+    }
+}
+
+impl Ord for PathfindingState {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        other.score.partial_cmp(&self.score).unwrap().reverse() // Max heap based on score
+    }
+}
+
+impl PartialOrd for PathfindingState {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for PathfindingState {
+    fn eq(&self, other: &Self) -> bool {
+        self.score == other.score
+    }
+}
+
+impl Eq for PathfindingState {}
+
+
+#[derive(Clone)]
+pub struct Graph {
+    nodes: Vec<Vec<Node>>,
+    edges: HashMap<(usize, usize), Vec<(usize, usize)>>
+}
+
+impl Graph {
+    pub fn new(size: usize) -> Self {
+        let mut graph = Graph {
+            nodes: vec![vec![Node::new(); size]; size],
+            edges: HashMap::new()
+        };
+
+        for i in 0..size {
+            for j in 0..size {
+                for di in -1..=1 {
+                    for dj in -1..=1 {
+                        if di == 0 && dj == 0 {
+                            continue; // Skip self
+                        }
+
+                        let ni = i as isize + di;
+                        let nj = j as isize + dj;
+
+                        if ni >= 0 && ni < size as isize && nj >= 0 && nj < size as isize {
+                            graph.add_edge((i, j), (ni as usize, nj as usize));
+                        }
+                    }
+                }
+            }
+        }
+
+        graph
+    }
+
+    pub fn add_edge(&mut self, u: (usize, usize), v: (usize, usize)) {
+        self.edges.entry(u).or_insert(Vec::new()).push(v);
+    }
+
+    pub fn add_node(&mut self, u: (usize, usize), node: Node) {
+        self.nodes[u.0][u.1] = node;
+    }
+
+    pub fn get_node_at(&self, u: (usize, usize)) -> &Node {
+        &self.nodes[u.0][u.1]
+    }
+
+    pub fn get_node_at_mut(&mut self, u: (usize, usize)) -> &mut Node {
+        &mut self.nodes[u.0][u.1]
+    }
+
+    pub fn from_file(path: &PathBuf) -> Self {
+        let contents = read_to_string(path).expect("Unable to load file");
+        let lines = contents.lines().enumerate();
+        let grid_size = lines.clone().count();
+        let mut graph = Graph::new(grid_size);
+        for (i, line) in lines {
+            for (j, c) in line.split(" ").enumerate() {
+
+                let node = Node {
+                    score: c.parse().expect("Unable to parse integer"),
+                    decay_rate: 0,
+                    recovery_rate: 0
+                };
+                graph.add_node((i, j), node);
+            }
+        }
+        graph
+    }
+
+    pub fn get_neighbors(&self, u: (usize, usize)) -> Option<&Vec<(usize, usize)>> {
+        self.edges.get(&u)
+    }
+
+    pub fn size(&self) -> usize {
+        self.nodes.len()
+    }
+
+    pub fn recover_for(&mut self, recovery_rate: u32, except: (usize, usize)) {
+        for i in 0..self.size() {
+            for j in 0..self.size() {
+                if (i, j) != except {
+                    self.nodes[i][j].score += recovery_rate;
+                }
+            }
+        }
+    }
+
+    pub fn set_decay_rates(&mut self, decay_rate: u32) {
+        for i in 0..self.size() {
+            for j in 0..self.size() {
+                self.nodes[i][j].decay_rate = decay_rate;
+            }
+        }
+    }
+
+    pub fn set_recovery_rates(&mut self, recovery_rate: u32) {
+        for i in 0..self.size() {
+            for j in 0..self.size() {
+                self.nodes[i][j].recovery_rate = recovery_rate;
+            }
+        }
+    }
+
+    pub fn path_planning(&mut self, start: (usize, usize), max_timesteps: u32, recovery_rate: u32) -> PathfindingResult {
+        let mut pq = BinaryHeap::new();
+        let mut path = Vec::new();
+        let mut score = 0;
+
+        pq.push(PathfindingState {
+            score: self.get_node_at(start).score,
+            timesteps_remaining: max_timesteps,
+            node: start
+        });
+
+        while let Some(state) = pq.pop() {
+
+            if state.timesteps_remaining == 0 {
+                break;
+            }
+
+            let node = self.get_node_at_mut(state.node);
+
+            score += node.score;
+
+            path.push(PathfindingStep { node: state.node, score: node.score });
+
+            node.score *= 0;
+
+            self.recover_for(recovery_rate, state.node);
+
+            // Add neighbors to queue
+            if let Some(neighbors) = self.get_neighbors(state.node) {
+
+                // clear the queue, such that old nodes are not considered
+                pq.clear();
+
+                for &neighbor in neighbors {
+                    let neighbor_node = self.get_node_at(neighbor);
+
+                    pq.push(PathfindingState {
+                        node: neighbor,
+                        score: neighbor_node.score,
+                        timesteps_remaining: state.timesteps_remaining - 1,
+                    });
+                }
+            }
+
+
+
+            println!("---")
+        }
+
+        PathfindingResult { path, score }
+    }
+
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_edges() {
+        let mut graph = Graph::new(3);
+        let edges = [
+            // top left
+            ((0, 0), vec![(0, 1), (1, 0), (1, 1)]),
+            // top right
+            ((0, 2), vec![(0, 1), (1, 2), (1, 1)]),
+            // first row - in between nodes
+            ((0, 1), vec![(0, 0), (0, 2), (1, 1), (1, 0), (1, 2)]),
+            // second row - left
+            ((1, 0), vec![(0, 0), (0, 1), (1, 1), (2, 1), (2, 0)]),
+            // second row - right
+            ((1, 2), vec![(0, 2), (0, 1), (1, 1), (2, 1), (2, 2)]),
+            // second row - in between nodes
+            ((1, 1), vec![(0, 0), (0, 1), (0, 2), (1, 0), (1, 2), (2, 0), (2, 1), (2, 2)]),
+            // bottom left
+            ((2, 0), vec![(2, 1), (1, 1), (1, 0)]),
+            // bottom right
+            ((2, 2), vec![(2, 1), (1, 2), (1, 1)]),
+            // bottom in between
+            ((2, 1), vec![(2, 0), (2, 2), (1, 1), (1, 0), (1, 2)]),
+        ];
+
+        assert_eq!(graph.edges, edges.iter().cloned().collect());
+    }
+}
