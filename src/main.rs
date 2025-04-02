@@ -1,10 +1,11 @@
 mod pathfinding;
 
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use crate::pathfinding::PathfindingResult;
 use eframe::egui::{Context, Sense, StrokeKind};
 use eframe::{egui, Frame};
-use egui_file_dialog::FileDialog;
+use egui_file::FileDialog;
 use pathfinding::Graph;
 
 #[cfg(target_arch = "wasm32")]
@@ -66,8 +67,8 @@ pub struct MyApp {
     recovery_rate: u32,
     path: PathfindingResult,
     start: Option<(usize, usize)>,
-    file_dialog: FileDialog,
-    picked_file: Option<PathBuf>,
+    opened_file: Option<PathBuf>,
+    open_file_dialog: Option<FileDialog>,
 }
 
 impl MyApp {
@@ -85,8 +86,8 @@ impl MyApp {
             new_width: width,
             path: PathfindingResult::empty(),
             start: None,
-            file_dialog: FileDialog::new(),
-            picked_file: None
+            opened_file: None,
+            open_file_dialog: None
         }
     }
 }
@@ -124,18 +125,27 @@ impl eframe::App for MyApp {
                     );
 
                     if ui.button("Open grid file…").clicked() {
-                        self.file_dialog.pick_file();
+                        // Show only files with the extension "txt".
+                        let filter = Box::new({
+                            let ext = Some(OsStr::new("txt"));
+                            move |path: &Path| -> bool { path.extension() == ext }
+                        });
+                        let mut dialog = FileDialog::open_file(self.opened_file.clone()).show_files_filter(filter);
+                        dialog.open();
+                        self.open_file_dialog = Some(dialog);
                     }
 
-                    // Update the dialog
-                    self.file_dialog.update(ctx);
+                    if let Some(dialog) = &mut self.open_file_dialog {
+                        if dialog.show(ctx).selected() {
+                            if let Some(file) = dialog.path() {
+                                let graph = Graph::from_file(file);
+                                self.graph = graph;
+                                self.height = self.graph.size();
+                                self.width = self.graph.size();
+                                self.path = PathfindingResult::empty();
+                            }
+                        }
 
-                    if let Some(path) = self.file_dialog.picked() {
-                        let graph = Graph::from_file(path);
-                        self.graph = graph;
-                        self.height = self.graph.size();
-                        self.width = self.graph.size();
-                        self.path = PathfindingResult::empty();
                     }
 
                     ui.add_space(WIDGET_SPACING);
