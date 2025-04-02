@@ -1,23 +1,38 @@
 mod pathfinding;
 
-use eframe::egui::{Context, Sense};
-use eframe::{egui, Frame};
-use pathfinding::Graph;
+use std::path::PathBuf;
 use crate::pathfinding::PathfindingResult;
+use eframe::egui::{Context, Sense, StrokeKind};
+use eframe::{egui, Frame};
+use egui_file_dialog::FileDialog;
+use pathfinding::Graph;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
+
+    use wasm_bindgen::JsCast;
+
     // Redirect `log` message to `console.log` and friends:
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
 
     let web_options = eframe::WebOptions::default();
+    let document = web_sys::window()
+        .expect("No window")
+        .document()
+        .expect("No document");
+
+    let canvas = document
+        .get_element_by_id("the_canvas_id")
+        .expect("Failed to find the_canvas_id")
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .expect("the_canvas_id was not a HtmlCanvasElement");
 
     wasm_bindgen_futures::spawn_local(async {
         eframe::WebRunner::new()
             .start(
-                "the_canvas_id", // hardcode it
+                canvas,
                 web_options,
-                Box::new(|cc| Box::new(MyApp::build(10, 10))),
+                Box::new(|cc| Ok(Box::new(MyApp::build(10, 10)))),
             )
             .await
             .expect("failed to start app");
@@ -28,26 +43,21 @@ fn main() {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
-    let icon_data = eframe::IconData::try_from_png_bytes(include_bytes!("assets/icon.png")).ok();
-    let options = eframe::NativeOptions {
-        icon_data,
-        ..Default::default()
-    };
     eframe::run_native(
-        "BFS pathfinding",
-        options,
-        Box::new(|_cc| Box::new(MyApp::build(10, 10))),
+        "pathfinding",
+        eframe::NativeOptions::default(),
+        Box::new(|ctx| Ok(Box::new(MyApp::build(10, 10))))
     )
     .expect("failed to initialise app")
 }
 
 const WIDGET_SPACING: f32 = 10.0;
 
-struct MyApp {
+pub struct MyApp {
     height: usize,
     width: usize,
     stroke: egui::Stroke,
-    rounding: egui::Rounding,
+    rounding: egui::CornerRadius,
     graph: Graph,
     new_height: usize,
     new_width: usize,
@@ -56,15 +66,17 @@ struct MyApp {
     recovery_rate: u32,
     path: PathfindingResult,
     start: Option<(usize, usize)>,
+    file_dialog: FileDialog,
+    picked_file: Option<PathBuf>,
 }
 
 impl MyApp {
-    fn build(width: usize, height: usize) -> Self {
+    pub fn build(width: usize, height: usize) -> Self {
         MyApp {
             width,
             height,
             stroke: egui::Stroke::new(1.0, egui::Color32::DARK_GRAY),
-            rounding: egui::Rounding::default(),
+            rounding: egui::CornerRadius::default(),
             graph: Graph::new(10),
             timesteps: 10,
             max_milliseconds: 1000,
@@ -72,23 +84,26 @@ impl MyApp {
             new_height: height,
             new_width: width,
             path: PathfindingResult::empty(),
-            start: None
+            start: None,
+            file_dialog: FileDialog::new(),
+            picked_file: None
         }
     }
 }
 
 impl eframe::App for MyApp {
+
     fn update(&mut self, ctx: &Context, frame: &mut Frame) {
         egui::SidePanel::right("my_left_panel").show(ctx, |ui| {
             ui.with_layout(
                 egui::Layout::top_down_justified(egui::Align::Center),
                 |ui| {
                     ui.add_space(WIDGET_SPACING);
-                    ui.add_space(0.0);
+                    ui.label(format!("Score: {}", self.path.score));
+
+                    ui.add_space(WIDGET_SPACING);
                     ui.label("SETTINGS");
                     ui.add_space(WIDGET_SPACING);
-
-                    ui.label(format!("Score: {}", self.path.score));
 
                     ui.add(
                         egui::Slider::new(&mut self.timesteps, 2..=300)
@@ -108,17 +123,20 @@ impl eframe::App for MyApp {
                             .integer(),
                     );
 
-
-
                     if ui.button("Open grid file…").clicked() {
-                        if let Some(path) = rfd::FileDialog::new().pick_file() {
-                            self.graph = Graph::from_file(&path);
-                            self.height = self.graph.size();
-                            self.width = self.graph.size();
-                            self.path = PathfindingResult::empty()
-                        }
+                        self.file_dialog.pick_file();
                     }
 
+                    // Update the dialog
+                    self.file_dialog.update(ctx);
+
+                    if let Some(path) = self.file_dialog.picked() {
+                        let graph = Graph::from_file(path);
+                        self.graph = graph;
+                        self.height = self.graph.size();
+                        self.width = self.graph.size();
+                        self.path = PathfindingResult::empty();
+                    }
 
                     ui.add_space(WIDGET_SPACING);
 
@@ -129,7 +147,7 @@ impl eframe::App for MyApp {
                             None => (0, 0)
                         };
 
-                        self.path = self.graph.path_planning(origin, self.timesteps, self.recovery_rate);
+                        self.path = self.graph.path_planning_bfs(origin, self.timesteps, self.recovery_rate);
                     }
 
                 },
@@ -169,6 +187,7 @@ impl eframe::App for MyApp {
                         rect,
                         self.rounding,
                         stroke,
+                        StrokeKind::Inside
                     ));
                 }
             }
