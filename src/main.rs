@@ -1,12 +1,10 @@
 mod pathfinding;
 
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
 use crate::pathfinding::PathfindingResult;
 use eframe::egui::{Context, Sense, StrokeKind};
 use eframe::{egui, Frame};
-use egui_file::FileDialog;
 use pathfinding::Graph;
+use std::sync::{Arc, Mutex};
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
@@ -33,61 +31,99 @@ fn main() {
             .start(
                 canvas,
                 web_options,
-                Box::new(|cc| Ok(Box::new(MyApp::build(10, 10)))),
+                Box::new(|cc| Ok(Box::new(MyApp::build()))),
             )
             .await
             .expect("failed to start app");
     });
 }
 
-// deploy to github pages
-
 #[cfg(not(target_arch = "wasm32"))]
 fn main() {
     eframe::run_native(
         "pathfinding",
         eframe::NativeOptions::default(),
-        Box::new(|ctx| Ok(Box::new(MyApp::build(10, 10))))
+        Box::new(|ctx| Ok(Box::new(MyApp::build())))
     )
     .expect("failed to initialise app")
 }
 
 const WIDGET_SPACING: f32 = 10.0;
 
+#[derive(Debug, PartialEq)]
+enum PathfindingStrategy {
+    BreadthFirstSearch,
+    DepthFirstSearch
+}
+
 pub struct MyApp {
-    height: usize,
-    width: usize,
     stroke: egui::Stroke,
     rounding: egui::CornerRadius,
-    graph: Graph,
-    new_height: usize,
-    new_width: usize,
+    graph: Arc<Mutex<Graph>>,
     timesteps: u32,
     max_milliseconds: usize,
     recovery_rate: u32,
-    path: PathfindingResult,
-    start: Option<(usize, usize)>,
-    opened_file: Option<PathBuf>,
-    open_file_dialog: Option<FileDialog>,
+    strategy: PathfindingStrategy,
+    path: Arc<Mutex<PathfindingResult>>,
+    start: Option<(usize, usize)>
 }
 
 impl MyApp {
-    pub fn build(width: usize, height: usize) -> Self {
+    pub fn build() -> Self {
         MyApp {
-            width,
-            height,
             stroke: egui::Stroke::new(1.0, egui::Color32::DARK_GRAY),
             rounding: egui::CornerRadius::default(),
-            graph: Graph::new(10),
+            graph: Arc::new(Mutex::new(Graph::new(10))),
             timesteps: 10,
             max_milliseconds: 1000,
             recovery_rate: 1,
-            new_height: height,
-            new_width: width,
-            path: PathfindingResult::empty(),
-            start: None,
-            opened_file: None,
-            open_file_dialog: None
+            strategy: PathfindingStrategy::BreadthFirstSearch,
+            path: Arc::new(Mutex::new(PathfindingResult::empty())),
+            start: None
+        }
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn upload_file(&self) {
+        let graph = Arc::clone(&self.graph);
+        let path = Arc::clone(&self.path);
+
+        let future = async move {
+            let file = rfd::AsyncFileDialog::new()
+                .add_filter("text", &["txt"])
+                .pick_file()
+                .await;
+
+            let mut path_ = path.lock().expect("Failed to obtain mutex for path");
+            let mut graph_ = graph.lock().expect("Failed to obtain mutex for graph");
+
+            if let Some(file) = file {
+                let bytes = file.read().await;
+                *graph_ = Graph::from_bytes(bytes);
+                *path_ = PathfindingResult::empty();
+            }
+        };
+
+        wasm_bindgen_futures::spawn_local(future);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn upload_file(&self) {
+        let file = rfd::FileDialog::new()
+            .add_filter("text", &["txt"])
+            .pick_file();
+
+        let path = Arc::clone(&self.path);
+        let graph = Arc::clone(&self.graph);
+
+        if let Some(file) = file {
+
+            let mut path_ = path.lock().expect("Failed to obtain mutex for path");
+            let mut graph_ = graph.lock().expect("Failed to obtain mutex for graph");
+
+            let file_path = file.as_path();
+            *graph_ = Graph::from_file(file_path);
+            *path_ = PathfindingResult::empty();
         }
     }
 }
@@ -95,16 +131,25 @@ impl MyApp {
 impl eframe::App for MyApp {
 
     fn update(&mut self, ctx: &Context, frame: &mut Frame) {
+
+        let path = Arc::clone(&self.path);
+        let graph = Arc::clone(&self.graph);
+
         egui::SidePanel::right("my_left_panel").show(ctx, |ui| {
-            ui.with_layout(
-                egui::Layout::top_down_justified(egui::Align::Center),
-                |ui| {
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
                     ui.add_space(WIDGET_SPACING);
-                    ui.label(format!("Score: {}", self.path.score));
+                    // ui.label(format!("Score: {}", path.lock().expect("Failed to obtain mutex for path").score()));
 
                     ui.add_space(WIDGET_SPACING);
                     ui.label("SETTINGS");
                     ui.add_space(WIDGET_SPACING);
+
+                    egui::ComboBox::from_label("Strategy")
+                        .selected_text(format!("{:?}", self.strategy))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut self.strategy, PathfindingStrategy::BreadthFirstSearch, "Breadth first search");
+                            ui.selectable_value(&mut self.strategy, PathfindingStrategy::DepthFirstSearch, "Depth first search");
+                        });
 
                     ui.add(
                         egui::Slider::new(&mut self.timesteps, 2..=300)
@@ -125,27 +170,7 @@ impl eframe::App for MyApp {
                     );
 
                     if ui.button("Open grid file…").clicked() {
-                        // Show only files with the extension "txt".
-                        let filter = Box::new({
-                            let ext = Some(OsStr::new("txt"));
-                            move |path: &Path| -> bool { path.extension() == ext }
-                        });
-                        let mut dialog = FileDialog::open_file(self.opened_file.clone()).show_files_filter(filter);
-                        dialog.open();
-                        self.open_file_dialog = Some(dialog);
-                    }
-
-                    if let Some(dialog) = &mut self.open_file_dialog {
-                        if dialog.show(ctx).selected() {
-                            if let Some(file) = dialog.path() {
-                                let graph = Graph::from_file(file);
-                                self.graph = graph;
-                                self.height = self.graph.size();
-                                self.width = self.graph.size();
-                                self.path = PathfindingResult::empty();
-                            }
-                        }
-
+                        self.upload_file()
                     }
 
                     ui.add_space(WIDGET_SPACING);
@@ -157,17 +182,24 @@ impl eframe::App for MyApp {
                             None => (0, 0)
                         };
 
-                        self.path = self.graph.path_planning_bfs(origin, self.timesteps, self.recovery_rate);
+                        let found_path = match self.strategy {
+                            PathfindingStrategy::BreadthFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, self.timesteps, self.recovery_rate),
+                            PathfindingStrategy::DepthFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, self.timesteps, self.recovery_rate)
+                        };
+
+                        let mut path_ = path.lock().expect("Failed to obtain mutex for path");
+
+                        *path_ = found_path;
                     }
 
-                },
-            )
+                },)
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             let panel_size = ui.available_size();
+            let graph_size = graph.lock().expect("Failed to obtain mutex for graph").size();
             let rect_size = egui::Vec2::new(
-                (panel_size.x - 20.0) / self.width as f32,
-                (panel_size.y - 20.0) / self.height as f32,
+                (panel_size.x - 20.0) / graph_size as f32,
+                (panel_size.y - 20.0) / graph_size as f32,
             );
 
             let (_, painter) = ui.allocate_painter(panel_size, Sense::hover());
@@ -175,8 +207,8 @@ impl eframe::App for MyApp {
             // Use a single loop to accumulate draw calls
             let mut shapes = Vec::new();
 
-            for y in 0..self.height {
-                for x in 0..self.width {
+            for y in 0..graph_size {
+                for x in 0..graph_size {
                     let x_coord = x as f32 * rect_size.x + 10.0;
                     let y_coord = y as f32 * rect_size.y + 10.0;
                     let pos = egui::pos2(x_coord, y_coord);
@@ -207,15 +239,18 @@ impl eframe::App for MyApp {
 
             // Only draw text for visible regions (dynamic culling)
             let visible_rect = ui.clip_rect();
-            for y in 0..self.height {
-                for x in 0..self.width {
+            let path_len = path.lock().expect("Failed to obtain mutex for path").path.len();
+
+            for y in 0..graph_size {
+                for x in 0..graph_size {
                     let x_coord = x as f32 * rect_size.x + 10.0;
                     let y_coord = y as f32 * rect_size.y + 10.0;
                     let pos = egui::pos2(x_coord, y_coord);
                     let rect = egui::Rect::from_min_size(pos, rect_size);
+                    let idx = path.lock().expect("Failed to obtain mutex for path").occurs_at((x, y));
 
-                    if let Some(idx) = self.path.occurs_at((x, y)) {
-                        let (r, g, b) = percentage_to_rgb(idx as f32 / self.path.path.len() as f32 * 100.0);
+                    if let Some(idx) = idx {
+                        let (r, g, b) = percentage_to_rgb(idx as f32 / path_len as f32 * 100.0);
                         painter.rect_filled(rect, self.rounding, egui::Color32::from_rgba_premultiplied(r, g, b, 100));
 
                         ui.painter().text(
@@ -229,7 +264,8 @@ impl eframe::App for MyApp {
                     }
 
                     if visible_rect.intersects(rect) {
-                        let node = self.graph.get_node_at((x, y));
+                        let graph = graph.lock().expect("Failed to obtain mutex for graph");
+                        let node = graph.get_node_at((x, y));
                         ui.painter().text(
                             rect.center(),
                             egui::Align2::CENTER_CENTER,
