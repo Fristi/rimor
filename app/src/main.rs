@@ -1,6 +1,4 @@
-mod pathfinding;
-
-use crate::pathfinding::PathfindingResult;
+use pathfinding::PathfindingResult;
 use eframe::egui::{Context, Sense, StrokeKind};
 use eframe::{egui, Frame};
 use pathfinding::Graph;
@@ -45,7 +43,7 @@ fn main() {
         eframe::NativeOptions::default(),
         Box::new(|ctx| Ok(Box::new(MyApp::build())))
     )
-    .expect("failed to initialise app")
+        .expect("failed to initialise app")
 }
 
 const WIDGET_SPACING: f32 = 10.0;
@@ -137,62 +135,62 @@ impl eframe::App for MyApp {
 
         egui::SidePanel::right("my_left_panel").show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
-                    ui.add_space(WIDGET_SPACING);
-                    ui.label(format!("Score: {}", path.lock().expect("Failed to obtain mutex for path").score()));
+                ui.add_space(WIDGET_SPACING);
+                ui.label(format!("Score: {}", path.lock().expect("Failed to obtain mutex for path").score()));
 
-                    ui.add_space(WIDGET_SPACING);
-                    ui.label("SETTINGS");
-                    ui.add_space(WIDGET_SPACING);
+                ui.add_space(WIDGET_SPACING);
+                ui.label("SETTINGS");
+                ui.add_space(WIDGET_SPACING);
 
-                    egui::ComboBox::from_label("Strategy")
-                        .selected_text(format!("{:?}", self.strategy))
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.strategy, PathfindingStrategy::BestFirstSearch, "Breadth first search");
-                            ui.selectable_value(&mut self.strategy, PathfindingStrategy::DepthFirstSearch, "Depth first search");
-                        });
+                egui::ComboBox::from_label("Strategy")
+                    .selected_text(format!("{:?}", self.strategy))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.strategy, PathfindingStrategy::BestFirstSearch, "Breadth first search");
+                        ui.selectable_value(&mut self.strategy, PathfindingStrategy::DepthFirstSearch, "Depth first search");
+                    });
 
-                    ui.add(
-                        egui::Slider::new(&mut self.timesteps, 2..=300)
-                            .text("Timesteps")
-                            .integer(),
-                    );
+                ui.add(
+                    egui::Slider::new(&mut self.timesteps, 2..=300)
+                        .text("Timesteps")
+                        .integer(),
+                );
 
-                    ui.add(
-                        egui::Slider::new(&mut self.max_milliseconds, 10..=2000)
-                            .text("Max duration in milliseconds")
-                            .integer(),
-                    );
+                ui.add(
+                    egui::Slider::new(&mut self.max_milliseconds, 10..=2000)
+                        .text("Max duration in milliseconds")
+                        .integer(),
+                );
 
-                    ui.add(
-                        egui::Slider::new(&mut self.recovery_rate, 1..=100)
-                            .text("Recovery rate per timestep")
-                            .integer(),
-                    );
+                ui.add(
+                    egui::Slider::new(&mut self.recovery_rate, 1..=100)
+                        .text("Recovery rate per timestep")
+                        .integer(),
+                );
 
-                    if ui.button("Open grid file…").clicked() {
-                        self.upload_file()
-                    }
+                if ui.button("Open grid file…").clicked() {
+                    self.upload_file()
+                }
 
-                    ui.add_space(WIDGET_SPACING);
+                ui.add_space(WIDGET_SPACING);
 
-                    if ui.button("Find Path").clicked() {
+                if ui.button("Find Path").clicked() {
 
-                        let origin = match self.start {
-                            Some((x, y)) => (x, y),
-                            None => (0, 0)
-                        };
+                    let origin = match self.start {
+                        Some((x, y)) => (x, y),
+                        None => (0, 0)
+                    };
 
-                        let found_path = match self.strategy {
-                            PathfindingStrategy::BestFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, self.timesteps, self.recovery_rate),
-                            PathfindingStrategy::DepthFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, self.timesteps, self.recovery_rate)
-                        };
+                    let found_path = match self.strategy {
+                        PathfindingStrategy::BestFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, self.timesteps, self.recovery_rate),
+                        PathfindingStrategy::DepthFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, self.timesteps, self.recovery_rate)
+                    };
 
-                        let mut path_ = path.lock().expect("Failed to obtain mutex for path");
+                    let mut path_ = path.lock().expect("Failed to obtain mutex for path");
 
-                        *path_ = found_path;
-                    }
+                    *path_ = found_path;
+                }
 
-                },)
+            },)
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             let panel_size = ui.available_size();
