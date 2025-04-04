@@ -1,4 +1,3 @@
-use good_lp::*;
 use std::collections::BinaryHeap;
 use std::fs::read_to_string;
 use std::path::Path;
@@ -282,104 +281,6 @@ impl Graph {
         }
 
         PathfindingResult { path: best_path.into_iter().map(|node| PathfindingStep { node, score: graph.get_node_at(node).score }).collect() }
-    }
-
-    pub fn path_planning_lp(&self, start: (usize, usize), max_timesteps: u32, recovery_rate: f64) -> PathfindingResult {
-
-        fn add_cube(vars: &mut ProblemVariables, var_def: VariableDefinition, x_len: usize, y_len: usize, z_len: usize) -> Vec<Vec<Vec<Variable>>> {
-            let mut z =  vec![];
-
-            for i in 0..x_len {
-                let mut y = vec![];
-                for j in 0..y_len {
-                    let mut x = vec![];
-                    for k in 0..z_len {
-                        x.push(vars.add(var_def.clone().name(format!("x_{}_{}_{}", i, j, k))));
-                    }
-                    y.push(x);
-                }
-                z.push(y);
-            }
-
-            z
-        }
-
-        let mut vars = ProblemVariables::new();
-        let nr_timesteps = max_timesteps as usize;
-
-        // Binary variable indicating if you move from node at time t
-        let x = add_cube(&mut vars, variable().binary(), self.size(), self.size(), nr_timesteps);
-        // Binary variable indicating if you visit node at time t
-        let v = add_cube(&mut vars, variable().binary(), self.size(), self.size(), nr_timesteps);
-        // Integer variable indicating the score of node at time t
-        let s = add_cube(&mut vars, variable(), self.size(), self.size(), nr_timesteps);
-        // Integer variable indicating the score of node at time t
-        let z = add_cube(&mut vars, variable(), self.size(), self.size(), nr_timesteps);
-
-        let objective =
-            z.iter().fold(Expression::default(), |acc, rows| {
-                rows.iter().fold(acc, |acc_row, cols| {
-                    acc_row + cols.iter().fold(Expression::default(), |acc_col, var| {
-                        acc_col + var
-                    })
-                })
-            });
-
-        let mut solver = vars.maximise(objective).using(default_solver);
-
-        solver.add_constraint(constraint!(x[start.0][start.1][0] == 1));
-
-        for x in 0 .. self.size() {
-            for y in 0 .. self.size() {
-                // Set the initial scores
-                solver.add_constraint(constraint!(s[x][y][0] == self.get_node_at((x, y)).score));
-            }
-        }
-
-        for t in 1 .. nr_timesteps {
-
-            for i in 0 .. self.size() {
-                for j in 0 .. self.size() {
-                    // If visited, reset; if not, recover
-                    solver.add_constraint(constraint!(s[i][j][t - 1] + recovery_rate * (1 - v[i][j][t]) == s[i][j][t]));
-                    // Cannot exceed max score
-                    solver.add_constraint(constraint!(s[i][j][t - 1] <= self.get_node_at((i, j)).score));
-
-                    let neighbors = self.get_neighbors((i, j));
-
-                    let expr = neighbors.iter().fold(Expression::with_capacity(neighbors.len()), |acc, neighbor| {
-                        acc + x[neighbor.0][neighbor.1][t - 1]
-                    });
-
-                    // Only visit nodes you arrive at
-                    solver.add_constraint(constraint!(v[i][j][t] == expr));
-
-                    // Upper bound
-                    solver.add_constraint(constraint!(z[i][j][t] <= s[i][j][t]));
-                    // If not visiting, z = 0
-                    solver.add_constraint(constraint!(z[i][j][t] <= v[i][j][t] * self.get_node_at((i, j)).score));
-                    // If visiting, z = s
-                    solver.add_constraint(constraint!(z[i][j][t] <= s[i][j][t] - (1 - v[i][j][t]) * self.get_node_at((i, j)).score));
-                    // Non negative
-                    solver.add_constraint(constraint!(z[i][j][t] >= 0));
-                }
-            }
-
-        }
-
-        let solution = solver.solve().unwrap();
-
-        for i in 0 .. self.size() {
-            for j in 0 .. self.size() {
-                for t in 0 .. nr_timesteps {
-                    if(solution.value(v[i][j][t]) == 1.0_f64) {
-                        println!("x[{}][{}][{}]", i, j, t);
-                    }
-                }
-            }
-        }
-
-        PathfindingResult::empty()
     }
 
 

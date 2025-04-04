@@ -52,7 +52,7 @@ const WIDGET_SPACING: f32 = 10.0;
 
 #[derive(Debug, PartialEq)]
 enum PathfindingStrategy {
-    BreadthFirstSearch,
+    BestFirstSearch,
     DepthFirstSearch
 }
 
@@ -77,7 +77,7 @@ impl MyApp {
             timesteps: 10,
             max_milliseconds: 1000,
             recovery_rate: 1,
-            strategy: PathfindingStrategy::BreadthFirstSearch,
+            strategy: PathfindingStrategy::BestFirstSearch,
             path: Arc::new(Mutex::new(PathfindingResult::empty())),
             start: None
         }
@@ -138,7 +138,7 @@ impl eframe::App for MyApp {
         egui::SidePanel::right("my_left_panel").show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::Center), |ui| {
                     ui.add_space(WIDGET_SPACING);
-                    // ui.label(format!("Score: {}", path.lock().expect("Failed to obtain mutex for path").score()));
+                    ui.label(format!("Score: {}", path.lock().expect("Failed to obtain mutex for path").score()));
 
                     ui.add_space(WIDGET_SPACING);
                     ui.label("SETTINGS");
@@ -147,7 +147,7 @@ impl eframe::App for MyApp {
                     egui::ComboBox::from_label("Strategy")
                         .selected_text(format!("{:?}", self.strategy))
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.strategy, PathfindingStrategy::BreadthFirstSearch, "Breadth first search");
+                            ui.selectable_value(&mut self.strategy, PathfindingStrategy::BestFirstSearch, "Breadth first search");
                             ui.selectable_value(&mut self.strategy, PathfindingStrategy::DepthFirstSearch, "Depth first search");
                         });
 
@@ -183,7 +183,7 @@ impl eframe::App for MyApp {
                         };
 
                         let found_path = match self.strategy {
-                            PathfindingStrategy::BreadthFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, self.timesteps, self.recovery_rate),
+                            PathfindingStrategy::BestFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, self.timesteps, self.recovery_rate),
                             PathfindingStrategy::DepthFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, self.timesteps, self.recovery_rate)
                         };
 
