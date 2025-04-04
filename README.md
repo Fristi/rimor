@@ -13,9 +13,11 @@ The path finding algorithm assumes the following
 - When you visit a cell the score for other cells is increased by the `recovery_rate` which is default 1
 - The algorithm tries to find a path which yields a maximum score
 
+Both the app/CLI allow you to load grid files which are formatted as a 2D array of integers, where each integer represents a score. Each line is a row and each line contains multiple integers separted by a space. The grid has a symmetrical height and width, so it's an NxN grid
+
 ### Visualization
 
-You can visualize the working of the pathfinder by visiting the webpage which is hosted on [GitHub Pages](https://frist.github.io/rimor). This is WebAssembly version which works well for 20x20 grids to demonstrate it visually. 
+You can visualize the working of the pathfinder by visiting the webpage which is hosted on [GitHub Pages](https://fristi.github.io/rimor). This is WebAssembly version which works well for 20x20 grids to demonstrate it visually. 
 
 ![visualization](visualize.png)
 
@@ -32,7 +34,9 @@ You can visualize the working of the pathfinder by visiting the webpage which is
 
 Another option for larger grids is to use the CLI version. This is a Rust CLI application which can be used to find the most feasible path in a grid. It is designed to work with larger grids, up to 1000x1000 and more
 
-Both versions allow you to load grid files which are formatted as a 2D array of integers, where each integer represents a score. Each line is a row and each line contains multiple integers separted by a space. The grid has a symmetrical height and width, so it's an NxN grid
+```bash
+cli -I /Users/{user}/Downloads/grids/1000.txt -T 100 -x 1 -y 2 --timeout 100
+```
 
 ### Available algorithms
 
