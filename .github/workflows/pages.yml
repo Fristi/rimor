@@ -26,6 +26,7 @@ jobs:
       - name: Build
         run: |
           cd app
+          chmod +x trunk
           ./trunk build --release --public-url https://fristi.github.io/rimor/
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
