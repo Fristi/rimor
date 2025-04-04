@@ -245,29 +245,62 @@ impl eframe::App for MyApp {
                     let y_coord = y as f32 * rect_size.y + 10.0;
                     let pos = egui::pos2(x_coord, y_coord);
                     let rect = egui::Rect::from_min_size(pos, rect_size);
-                    let idx = path.lock().expect("Failed to obtain mutex for path").occurs_at((x, y));
+                    let path = path.lock().expect("Failed to obtain mutex for path");
+                    let steps = path.steps_at((x, y));
 
-                    if let Some(idx) = idx {
-                        let (r, g, b) = percentage_to_rgb(idx as f32 / path_len as f32 * 100.0);
+                    if(steps.len() > 1) {
+                        painter.rect_filled(rect, self.rounding, egui::Color32::LIGHT_GRAY);
+
+                        ui.painter().text(
+                            rect.min,
+                            egui::Align2::LEFT_TOP,
+                            format!("{}", steps.iter().map(|s| s.step.to_string()).collect::<Vec<String>>().join(" .. ")),
+                            egui::FontId::proportional(8.0), // Reduce font size
+                            egui::Color32::DARK_GRAY,
+                        );
+
+                        ui.painter().text(
+                            rect.max,
+                            egui::Align2::RIGHT_BOTTOM,
+                            format!("{}", steps.iter().map(|s| s.score.to_string()).collect::<Vec<String>>().join(" + ")),
+                            egui::FontId::proportional(9.0), // Reduce font size
+                            egui::Color32::BLACK,
+                        );
+
+                    } else if let Some(step) = steps.first() {
+
+                        let (r, g, b) = percentage_to_rgb(step.step as f32 / path_len as f32 * 100.0);
+
                         painter.rect_filled(rect, self.rounding, egui::Color32::from_rgba_premultiplied(r, g, b, 100));
 
                         ui.painter().text(
                             rect.min,
                             egui::Align2::LEFT_TOP,
-                            format!("{}", idx + 1),
+                            format!("{}", step.step),
                             egui::FontId::proportional(8.0), // Reduce font size
                             egui::Color32::DARK_GRAY,
                         );
 
+                        ui.painter().text(
+                            rect.max,
+                            egui::Align2::RIGHT_BOTTOM,
+                            format!("{}", step.score),
+                            egui::FontId::proportional(9.0), // Reduce font size
+                            egui::Color32::BLACK,
+                        );
                     }
+
+
+
+
 
                     if visible_rect.intersects(rect) {
                         let graph = graph.lock().expect("Failed to obtain mutex for graph");
-                        let node = graph.get_node_at((x, y));
+                        let node = graph.get_score_at((x, y));
                         ui.painter().text(
                             rect.center(),
                             egui::Align2::CENTER_CENTER,
-                            format!("{}", node.score),
+                            format!("{}", node),
                             egui::FontId::proportional(10.0), // Reduce font size
                             egui::Color32::BLACK,
                         );

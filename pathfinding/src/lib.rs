@@ -2,23 +2,6 @@ use std::collections::BinaryHeap;
 use std::fs::read_to_string;
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Node {
-    pub score: u32,
-    pub decay_rate: u32,
-    pub recovery_rate: u32,
-}
-
-impl Node {
-    pub fn new() -> Self {
-        Node {
-            score: 0,
-            decay_rate: 0,
-            recovery_rate: 0
-        }
-    }
-}
-
 #[derive(Debug)]
 struct PathfindingState {
     pub score: u32,
@@ -29,7 +12,8 @@ struct PathfindingState {
 #[derive(Debug, Clone, Copy)]
 pub struct PathfindingStep {
     pub node: (usize, usize),
-    pub score: u32
+    pub score: u32,
+    pub step: u32
 }
 
 #[derive(Debug, Clone)]
@@ -42,8 +26,8 @@ impl PathfindingResult {
         PathfindingResult { path: Vec::new() }
     }
 
-    pub fn occurs_at(&self, node: (usize, usize)) -> Option<usize> {
-        self.path.iter().position(|&n| n.node == node)
+    pub fn steps_at(&self, node: (usize, usize)) -> Vec<&PathfindingStep> {
+        self.path.iter().filter(|&&n| n.node == node).collect()
     }
 
     pub fn score(&self) -> u32 {
@@ -74,29 +58,29 @@ impl Eq for PathfindingState {}
 
 #[derive(Clone)]
 pub struct Graph {
-    nodes: Vec<Vec<Node>>,
+    nodes: Vec<Vec<u32>>,
     size: usize
 }
 
 impl Graph {
     pub fn new(size: usize) -> Self {
         Graph {
-            nodes: vec![vec![Node::new(); size]; size],
+            nodes: vec![vec![0; size]; size],
             size: size
         }
     }
 
-    pub fn add_node(&mut self, u: (usize, usize), node: Node) {
-        self.nodes[u.0][u.1] = node;
+    pub fn add_node(&mut self, u: (usize, usize), score: u32) {
+        self.nodes[u.0][u.1] = score;
     }
 
-    pub fn get_node_at(&self, u: (usize, usize)) -> &Node {
+    pub fn get_score_at(&self, u: (usize, usize)) -> &u32 {
         &self.nodes[u.0][u.1]
     }
 
     pub fn reset_score(&self, u: (usize, usize)) -> Graph {
         let mut graph = self.clone();
-        graph.nodes[u.0][u.1].score = 0;
+        graph.nodes[u.0][u.1] = 0;
         graph
     }
 
@@ -107,13 +91,7 @@ impl Graph {
         let mut graph = Graph::new(grid_size);
         for (i, line) in lines {
             for (j, c) in line.split(" ").enumerate() {
-
-                let node = Node {
-                    score: c.parse().expect("Unable to parse integer"),
-                    decay_rate: 0,
-                    recovery_rate: 0
-                };
-                graph.add_node((i, j), node);
+                graph.add_node((i, j), c.parse().expect("Unable to parse integer"));
             }
         }
         graph
@@ -126,13 +104,7 @@ impl Graph {
         let mut graph = Graph::new(grid_size);
         for (i, line) in lines {
             for (j, c) in line.split(" ").enumerate() {
-
-                let node = Node {
-                    score: c.parse().expect("Unable to parse integer"),
-                    decay_rate: 0,
-                    recovery_rate: 0
-                };
-                graph.add_node((i, j), node);
+                graph.add_node((i, j), c.parse().expect("Unable to parse integer"));
             }
         }
         graph
@@ -165,7 +137,7 @@ impl Graph {
         for i in 0..self.size() {
             for j in 0..self.size() {
                 if (i, j) != except {
-                    graph.nodes[i][j].score += recovery_rate;
+                    graph.nodes[i][j] += recovery_rate;
                 }
             }
         }
@@ -177,9 +149,10 @@ impl Graph {
         let mut path = Vec::new();
         let mut graph = self.clone();
         let mut score = 0;
+        let mut step = 0;
 
         pq.push(PathfindingState {
-            score: graph.get_node_at(start).score,
+            score: graph.get_score_at(start).clone(),
             timesteps_remaining: max_timesteps,
             node: start
         });
@@ -190,11 +163,12 @@ impl Graph {
                 break;
             }
 
-            let node = graph.get_node_at(state.node);
+            let score_ = graph.get_score_at(state.node);
 
-            score += node.score;
+            score += score_;
+            step += 1;
 
-            path.push(PathfindingStep { node: state.node, score: node.score });
+            path.push(PathfindingStep { node: state.node, score: *score_, step: step });
 
             graph = graph
                 .reset_score(state.node)
@@ -204,11 +178,11 @@ impl Graph {
             pq.clear();
 
             for neighbor in graph.get_neighbors(state.node) {
-                let neighbor_node = graph.get_node_at(neighbor);
+                let neighbor_score = graph.get_score_at(neighbor);
 
                 pq.push(PathfindingState {
                     node: neighbor,
-                    score: neighbor_node.score,
+                    score: *neighbor_score,
                     timesteps_remaining: state.timesteps_remaining - 1,
                 });
             }
@@ -219,68 +193,7 @@ impl Graph {
 
     pub fn path_planning_dfs(&self, start: (usize, usize), max_timesteps: u32, recovery_rate: u32) -> PathfindingResult {
 
-        #[derive(Debug, PartialEq)]
-        struct State {
-            node: (usize, usize),
-            score: u32,
-            hops_remaining: u32,
-            path: Vec<(usize, usize)>,
-        }
-
-        impl Ord for State {
-            fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-                other.score.partial_cmp(&self.score).unwrap() // Max heap based on score
-            }
-        }
-
-        impl PartialOrd for State {
-            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                Some(self.cmp(other))
-            }
-        }
-
-        impl Eq for State {}
-
-        let mut pq = BinaryHeap::new();
-        let mut best_path = Vec::new();
-        let mut graph = self.clone();
-
-        pq.push(State { node: start, score: graph.get_node_at(start).score, hops_remaining: max_timesteps, path: vec![start] });
-
-        while let Some(state) = pq.pop() {
-            if state.hops_remaining == 0 {
-                if state.score > graph.get_node_at(*best_path.last().unwrap_or(&start)).score {
-                    best_path = state.path.clone();
-                }
-                continue;
-            }
-
-            // let node = graph.nodes.get_mut(&state.node).unwrap();
-            // node.score *= node.decay_rate;
-
-            let mut candidates = Vec::new();
-            for neighbor in graph.get_neighbors(state.node) {
-                let neighbor_node = &graph.get_node_at(neighbor);
-                let new_score = neighbor_node.score * recovery_rate;
-                let mut new_path = state.path.clone();
-                new_path.push(neighbor);
-
-                candidates.push(State {
-                    node: neighbor,
-                    score: new_score,
-                    hops_remaining: state.hops_remaining - 1,
-                    path: new_path,
-                });
-            }
-
-            candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
-
-            for candidate in candidates.into_iter().take(10) {
-                pq.push(candidate);
-            }
-        }
-
-        PathfindingResult { path: best_path.into_iter().map(|node| PathfindingStep { node, score: graph.get_node_at(node).score }).collect() }
+        unimplemented!()
     }
 
 
