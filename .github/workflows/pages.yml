@@ -24,8 +24,9 @@ jobs:
       - name: Download and install Trunk binary
         run: wget -qO- https://github.com/thedodd/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf- > app/trunk
       - name: Build
-        run:
-          ./app/trunk build --release --public-url https://fristi.github.io/rimor/
+        run: |
+          cd app
+          ./trunk build --release --public-url https://fristi.github.io/rimor/
       - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
