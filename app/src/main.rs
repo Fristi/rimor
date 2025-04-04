@@ -2,7 +2,9 @@ use pathfinding::PathfindingResult;
 use eframe::egui::{Context, Sense, StrokeKind};
 use eframe::{egui, Frame};
 use pathfinding::Graph;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
@@ -48,7 +50,7 @@ fn main() {
 
 const WIDGET_SPACING: f32 = 10.0;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum PathfindingStrategy {
     BestFirstSearch,
     DepthFirstSearch
@@ -59,7 +61,7 @@ pub struct MyApp {
     rounding: egui::CornerRadius,
     graph: Arc<Mutex<Graph>>,
     timesteps: u32,
-    max_milliseconds: usize,
+    max_milliseconds: u64,
     recovery_rate: u32,
     strategy: PathfindingStrategy,
     path: Arc<Mutex<PathfindingResult>>,
@@ -156,7 +158,7 @@ impl eframe::App for MyApp {
                 );
 
                 ui.add(
-                    egui::Slider::new(&mut self.max_milliseconds, 10..=2000)
+                    egui::Slider::new(&mut self.max_milliseconds, 1..=2000)
                         .text("Max duration in milliseconds")
                         .integer(),
                 );
@@ -180,14 +182,32 @@ impl eframe::App for MyApp {
                         None => (0, 0)
                     };
 
-                    let found_path = match self.strategy {
-                        PathfindingStrategy::BestFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, self.timesteps, self.recovery_rate),
-                        PathfindingStrategy::DepthFirstSearch => graph.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, self.timesteps, self.recovery_rate)
+                    let timeout = Duration::from_millis(self.max_milliseconds);
+
+                    let (tx, rx) = mpsc::channel();
+
+                    let timesteps = self.timesteps;
+                    let recovery_rate = self.recovery_rate;
+                    let strategy = self.strategy.clone();
+                    let graph_ = Arc::clone(&graph);
+
+                    // Spawn the function in a separate thread
+                    thread::spawn(move || {
+                        let result = match strategy {
+                            PathfindingStrategy::BestFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, timesteps, recovery_rate),
+                            PathfindingStrategy::DepthFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, timesteps, recovery_rate)
+                        };
+                        let _ = tx.send(result); // Send result through the channel
+                    });
+
+                    let path_found = match rx.recv_timeout(timeout) {
+                        Ok(path) => path,
+                        _ => PathfindingResult::empty()
                     };
 
                     let mut path_ = path.lock().expect("Failed to obtain mutex for path");
 
-                    *path_ = found_path;
+                    *path_ = path_found;
                 }
 
             },)
