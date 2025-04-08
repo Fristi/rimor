@@ -44,5 +44,11 @@ cli -I /Users/{user}/Downloads/grids/1000.txt -T 100 -x 1 -y 2 --timeout 100
 
 This is a greedy algorithm which tries to find the best path by exploring the most promising nodes first. For each node it visits it get the adjacent nodes and put these values in priority queue and in the next step it will explore the item which has the highest score in the queue. The time complexity is O(T) which is fast, but it will miss the honey pots which are not considered with this approach
 
+### Considered methods
+
+#### Depth First Search
+
+#### Linear programming
+
 
 

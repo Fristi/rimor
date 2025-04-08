@@ -53,7 +53,7 @@ const WIDGET_SPACING: f32 = 10.0;
 #[derive(Debug, PartialEq, Clone)]
 enum PathfindingStrategy {
     BestFirstSearch,
-    DepthFirstSearch
+    LinearProgramming
 }
 
 pub struct MyApp {
@@ -148,7 +148,7 @@ impl eframe::App for MyApp {
                     .selected_text(format!("{:?}", self.strategy))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut self.strategy, PathfindingStrategy::BestFirstSearch, "Breadth first search");
-                        ui.selectable_value(&mut self.strategy, PathfindingStrategy::DepthFirstSearch, "Depth first search");
+                        ui.selectable_value(&mut self.strategy, PathfindingStrategy::LinearProgramming, "Linear programming");
                     });
 
                 ui.add(
@@ -195,7 +195,7 @@ impl eframe::App for MyApp {
                     thread::spawn(move || {
                         let result = match strategy {
                             PathfindingStrategy::BestFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, timesteps, recovery_rate),
-                            PathfindingStrategy::DepthFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, timesteps, recovery_rate)
+                            PathfindingStrategy::LinearProgramming => graph_.lock().expect("Failed to obtain mutex for graph").lp(origin, timesteps),
                         };
                         let _ = tx.send(result); // Send result through the channel
                     });

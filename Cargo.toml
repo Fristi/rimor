@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "pathfinding",
+    "cli",
+    "app",
+]
