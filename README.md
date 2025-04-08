@@ -13,11 +13,13 @@ The path finding algorithm assumes the following
 - When you visit a cell the score for other cells is increased by the `recovery_rate` which is default 1
 - The algorithm tries to find a path which yields a maximum score
 
-Both the app/CLI allow you to load grid files which are formatted as a 2D array of integers, where each integer represents a score. Each line is a row and each line contains multiple integers separted by a space. The grid has a symmetrical height and width, so it's an NxN grid
+Both the app/CLI allow you to load grid files which are formatted as a 2D array of integers, where each integer represents a score. Each line is a row and each line contains multiple integers separated by a space. The grid has a symmetrical height and width, so it's an N x N grid
 
 ### Visualization
 
 You can visualize the working of the pathfinder by visiting the webpage which is hosted on [GitHub Pages](https://fristi.github.io/rimor). This is WebAssembly version which works well for 20x20 grids to demonstrate it visually. 
+
+**Note that this only seems the work with Chromium based browsers, like Chrome, Brave and Edge.**
 
 ![visualization](visualize.png)
 
@@ -42,7 +44,7 @@ cli -I /Users/{user}/Downloads/grids/1000.txt -T 100 -x 1 -y 2 --timeout 100
 
 #### Best First Search
 
-This is a greedy algorithm which tries to find the best path by exploring the most promising nodes first. For each node it visits it get the adjacent nodes and put these values in priority queue and in the next step it will explore the item which has the highest score in the queue. The time complexity is O(T) which is fast, but it will miss the honey pots which are not considered with this approach
+This is a greedy algorithm which tries to find the best path by exploring the most promising nodes first. For each node it visits it get the adjacent nodes and put these values in priority queue and in the next step it will explore the item which has the highest score in the queue. The time complexity is O(T) which is fast, but it will miss the nodes with high scores which are in reach and not considered with this approach
 
 ### Considered methods
 
@@ -57,13 +59,12 @@ This is a mathematical approach which tries to find the best path by solving a l
 ```
 maximize(x1 * score1 + x2 * score2 + x3 * score3 + ... + xn * scoren)
 ```
-The
 
 Where `x1..n` is the edge as binary variable (either 0 or 1) and `score1..n` the score you would get from visiting that node at the moment. At the moment the `score` is a coefficient which makes this a linear programming problem. If you would adjust the score over time you would make the score a variable as well which would make this a quadratic programming problem. I didn't reach that approach yet
 
 ##### constraints
 
-Leave the node (any of the edges should be 1)
+Leave the _start_ node (any of the edges should be 1)
 
 ```
 x1 + xn == 1
@@ -76,6 +77,14 @@ edges_in - edges_out == 0
 ```
 
 Where `edges_in` and `edges_out` is the sum of variables associated with the edges, if you subtract them they would end up as zero. This means that if you would visit a node you will also leave the node
+
+Number of edges
+
+```
+sum(x1..n) == max_timesteps
+```
+
+This will count the number of edges you would visit. This is a constraint which is needed to make sure that you don't visit more edges than the maximum number of timesteps
 
 ### Unexplored approaches
 
@@ -91,7 +100,7 @@ I don't have expertise in this field, but I think this is a good approach to exp
 
 Sequential best-first search with agent order permutation and coverage-based constraints for maximizing score without explicit goals.
 
-In other words, it would use the best first search approach, but it will create a permutation list of all the starting order and loop over them. For each invocation of the best first search function it would included the already covered paths, so you maximize the score. This is a brute force approach which has a time complexity of O(N! * T) where N is the number of agents and T is the number of timesteps. 
+In other words, it would use the best first search approach, but it will create a permutation list of all the starting order and loop over them. For each invocation of the best first search function it would include the already covered paths, so you maximize the score. This is a brute force approach which has a time complexity of O(N! * T) where N is the number of agents and T is the number of timesteps. 
 
 
 

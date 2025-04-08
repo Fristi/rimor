@@ -126,6 +126,62 @@ impl MyApp {
             *path_ = PathfindingResult::empty();
         }
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn find_path(&self) {
+        let origin = match self.start {
+            Some((x, y)) => (x, y),
+            None => (0, 0)
+        };
+
+        let timeout = Duration::from_millis(self.max_milliseconds);
+
+        let (tx, rx) = mpsc::channel();
+
+        let timesteps = self.timesteps;
+        let recovery_rate = self.recovery_rate;
+        let strategy = self.strategy.clone();
+        let graph_ = Arc::clone(&self.graph);
+
+        thread::spawn(move || {
+            let result = match strategy {
+                PathfindingStrategy::BestFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, timesteps, recovery_rate),
+                PathfindingStrategy::DepthFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, timesteps, recovery_rate)
+            };
+            let _ = tx.send(result); // Send result through the channel
+        });
+
+        let path_found = match rx.recv_timeout(timeout) {
+            Ok(path) => path,
+            _ => PathfindingResult::empty()
+        };
+
+        let mut path_ = self.path.lock().expect("Failed to obtain mutex for path");
+
+        *path_ = path_found;
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn find_path(&self) {
+        let origin = match self.start {
+            Some((x, y)) => (x, y),
+            None => (0, 0)
+        };
+
+        let timesteps = self.timesteps;
+        let recovery_rate = self.recovery_rate;
+        let strategy = self.strategy.clone();
+        let graph_ = Arc::clone(&self.graph);
+
+        let result = match strategy {
+            PathfindingStrategy::BestFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, timesteps, recovery_rate),
+            PathfindingStrategy::DepthFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, timesteps, recovery_rate)
+        };
+
+        let mut path_ = self.path.lock().expect("Failed to obtain mutex for path");
+
+        *path_ = result;
+    }
 }
 
 impl eframe::App for MyApp {
@@ -176,41 +232,9 @@ impl eframe::App for MyApp {
                 ui.add_space(WIDGET_SPACING);
 
                 if ui.button("Find Path").clicked() {
-
-                    let origin = match self.start {
-                        Some((x, y)) => (x, y),
-                        None => (0, 0)
-                    };
-
-                    let timeout = Duration::from_millis(self.max_milliseconds);
-
-                    let (tx, rx) = mpsc::channel();
-
-                    let timesteps = self.timesteps;
-                    let recovery_rate = self.recovery_rate;
-                    let strategy = self.strategy.clone();
-                    let graph_ = Arc::clone(&graph);
-
-                    // Spawn the function in a separate thread
-                    thread::spawn(move || {
-                        let result = match strategy {
-                            PathfindingStrategy::BestFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_bfs(origin, timesteps, recovery_rate),
-                            PathfindingStrategy::DepthFirstSearch => graph_.lock().expect("Failed to obtain mutex for graph").path_planning_dfs(origin, timesteps, recovery_rate)
-                        };
-                        let _ = tx.send(result); // Send result through the channel
-                    });
-
-                    let path_found = match rx.recv_timeout(timeout) {
-                        Ok(path) => path,
-                        _ => PathfindingResult::empty()
-                    };
-
-                    let mut path_ = path.lock().expect("Failed to obtain mutex for path");
-
-                    *path_ = path_found;
+                    self.find_path()
                 }
-
-            },)
+            })
         });
         egui::CentralPanel::default().show(ctx, |ui| {
             let panel_size = ui.available_size();
