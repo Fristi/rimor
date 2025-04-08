@@ -21,6 +21,8 @@ You can visualize the working of the pathfinder by visiting the webpage which is
 
 **Note that this only seems the work with Chromium based browsers, like Chrome, Brave and Edge.**
 
+You can use this file [3 x 3 grid](https://github.com/Fristi/rimor/blob/main/3x3.txt) to test the visualization. The file is a 2D array of integers, where each integer represents a score. Each line is a row and each line contains multiple integers separated by a space. The grid has a symmetrical height and width, so it's an N x N grid
+
 ![visualization](visualize.png)
 
 #### Features
